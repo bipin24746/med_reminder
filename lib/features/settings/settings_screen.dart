@@ -146,7 +146,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (v) {
               setState(() {
                 _soundMode = 'system';
-                _pickedUri = null; // ✅ remove picked tone if system is chosen
+                _pickedUri = null; // ✅ clear picked tone
               });
             },
             title: const Text('Use system default alarm tone'),
@@ -154,10 +154,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           ListTile(
             title: const Text('Pick alarm tone from device'),
-            subtitle: Text(_pickedUri ?? 'No tone picked'),
+            subtitle: Text(
+              _soundMode == 'system'
+                  ? 'Using system default'
+                  : (_pickedUri ?? 'No tone picked'),
+            ),
             trailing: const Icon(Icons.music_note),
-            onTap: _pickAlarmTone,
+            onTap: _pickAlarmTone, // keep enabled OR disable if you want
           ),
+
 
           // SwitchListTile(
           //   title: const Text('Also play app alarm sound (alarm.mp3)'),
