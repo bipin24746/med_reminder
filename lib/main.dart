@@ -17,7 +17,6 @@ Future<void> main() async {
   runApp(const ProviderScope(child: MyApp()));
 }
 
-
 class MyApp extends ConsumerWidget {
   const MyApp({super.key});
 
@@ -26,14 +25,25 @@ class MyApp extends ConsumerWidget {
     final router = ref.watch(routerProvider);
 
     return ScreenUtilInit(
-      designSize: const Size(390, 844), // iPhone 13-ish baseline
+      designSize: const Size(390, 844),
       minTextAdapt: true,
       splitScreenMode: true,
-      builder: (_, __) {
+      builder: (context, child) {
         return MaterialApp.router(
           debugShowCheckedModeBanner: false,
           theme: AppTheme.theme(),
           routerConfig: router,
+
+          // ✅ Elders: make text bigger everywhere safely (no TextTheme.apply crash)
+          builder: (context, appChild) {
+            final mq = MediaQuery.of(context);
+            return MediaQuery(
+              data: mq.copyWith(
+                textScaler: const TextScaler.linear(1.25), // 25% bigger
+              ),
+              child: appChild ?? const SizedBox.shrink(),
+            );
+          },
         );
       },
     );

@@ -231,6 +231,8 @@ class _AddMedicineScreenState extends ConsumerState<AddMedicineScreen> {
 
       final med = Medicine(
         name: name,
+        form: 'pill',              // ✅ default
+        doseAmount: '1 tablet',    // ✅ default
         note: _note.text.trim().isEmpty ? null : _note.text.trim(),
         timesPerDay: _timesPerDay,
         days: _days,
@@ -239,6 +241,7 @@ class _AddMedicineScreenState extends ConsumerState<AddMedicineScreen> {
         startDateMillis: DateTime(_startDate.year, _startDate.month, _startDate.day)
             .millisecondsSinceEpoch,
       );
+
 
       // 1) Save to DB (now we get an id)
       final id = await ref.read(medicineRepoProvider).insert(med);

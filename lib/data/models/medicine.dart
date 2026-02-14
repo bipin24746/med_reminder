@@ -5,8 +5,12 @@ class Medicine {
   final int timesPerDay;
   final int days;
   final String timezone;
-  final String timesJson; // ["08:00","20:00"]
+  final String timesJson;
   final int startDateMillis;
+
+  // ✅ NEW
+  final String form;        // e.g. "pill", "liquid"
+  final String doseAmount;  // e.g. "1 tablet", "5 ml"
 
   Medicine({
     this.id,
@@ -17,6 +21,8 @@ class Medicine {
     required this.timezone,
     required this.timesJson,
     required this.startDateMillis,
+    required this.form,
+    required this.doseAmount,
   });
 
   Medicine copyWith({int? id}) => Medicine(
@@ -28,6 +34,8 @@ class Medicine {
     timezone: timezone,
     timesJson: timesJson,
     startDateMillis: startDateMillis,
+    form: form,
+    doseAmount: doseAmount,
   );
 
   Map<String, Object?> toMap() => {
@@ -39,6 +47,9 @@ class Medicine {
     'timezone': timezone,
     'timesJson': timesJson,
     'startDateMillis': startDateMillis,
+    // ✅ NEW
+    'form': form,
+    'doseAmount': doseAmount,
   };
 
   static Medicine fromMap(Map<String, Object?> map) => Medicine(
@@ -50,5 +61,8 @@ class Medicine {
     timezone: map['timezone'] as String,
     timesJson: map['timesJson'] as String,
     startDateMillis: map['startDateMillis'] as int,
+    // ✅ NEW
+    form: (map['form'] as String?) ?? 'pill',
+    doseAmount: (map['doseAmount'] as String?) ?? '1',
   );
 }

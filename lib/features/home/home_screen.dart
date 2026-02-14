@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:med_reminder_fixed/features/home/medicine_card.dart';
+import 'package:med_reminder_fixed/features/meds/add_flow/add_med_flow_controller.dart';
 import 'package:med_reminder_fixed/services/alarm_id.dart';
 import 'package:med_reminder_fixed/services/native_alarm_service.dart';
 import 'package:med_reminder_fixed/services/notification_services.dart';
@@ -18,20 +19,130 @@ class HomeScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text('Hi ${auth.email ?? ''}'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              context.push('/settings');
-            },
-          ),
-        ],
 
-      ),
+      actions: [
+      IconButton(
+      icon: const Icon(Icons.logout_rounded),
+      onPressed: () async {
+        final theme = Theme.of(context);
+
+        final logout = await showDialog<bool>(
+          context: context,
+          barrierDismissible: true,
+          builder: (dialogCtx) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.logout_rounded,
+                        size: 34,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Logout?',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Do you want to logout?',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black.withOpacity(0.72),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 52,
+                            child: OutlinedButton(
+                              onPressed: () =>
+                                  Navigator.of(dialogCtx).pop(false),
+                              style: OutlinedButton.styleFrom(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text(
+                                'No',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: SizedBox(
+                            height: 52,
+                            child: ElevatedButton(
+                              onPressed: () =>
+                                  Navigator.of(dialogCtx).pop(true),
+                              style: ElevatedButton.styleFrom(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text(
+                                'Yes',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+
+        if (logout == true) {
+          ref.read(authControllerProvider.notifier).signOut();
+          if (context.mounted) context.go('/signin');
+        }
+      },
+    ),
+    ],
+
+
+    ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.go('/add'),
+        onPressed: () {
+          ref.read(addMedFlowProvider.notifier).reset();
+          context.push('/meds/add/name');
+        },
         icon: const Icon(Icons.add),
-        label: const Text('Add Medicine'),
+        label: const Text('Add Medicines'),
       ),
       body: medsAsync.when(
         data: (meds) {

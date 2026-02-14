@@ -4,7 +4,7 @@ import '../models/user_local.dart';
 
 class UserRepo {
   Future<LocalUser?> signIn(String email, String password) async {
-    final Database db = await AppDb.instance.db;
+    final Database db = await AppDb.db;
     final rows = await db.query(
       'users',
       where: 'email = ? AND password = ?',
@@ -16,9 +16,12 @@ class UserRepo {
   }
 
   Future<bool> signUp(String email, String password) async {
-    final Database db = await AppDb.instance.db;
+    final Database db = await AppDb.db;
     try {
-      await db.insert('users', {'email': email, 'password': password});
+      await db.insert('users', {
+        'email': email,
+        'password': password,
+      });
       return true;
     } catch (_) {
       return false;
