@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -20,7 +19,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   bool _loading = true;
 
-  int _durationSec = 10;
+  // ✅ dropdown minutes
+  final List<int> _minuteOptions = const [5, 10, 15, 20, 25, 30];
+
+  int _selectedMinutes = 5; // ✅ default UI selection = 5
+  int _savedMinutes = 5;    // for display only
+
   String _soundMode = 'system';
   String? _pickedUri;
   bool _alsoPlayAppSound = true;
@@ -33,23 +37,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _load() async {
     final sp = await SharedPreferences.getInstance();
-    setState(() {
-      _durationSec = sp.getInt(_kDuration) ?? 10;
-      _soundMode = sp.getString(_kMode) ?? 'system';
-      _pickedUri = sp.getString(_kPickedUri);
-      _alsoPlayAppSound = sp.getBool(_kAlsoApp) ?? true;
-      _loading = false;
-    });
+
+    final savedSec = sp.getInt(_kDuration) ?? 300; // ✅ default 5 min
+    final savedMin = (savedSec / 60).round();
+
+    _savedMinutes = _minuteOptions.contains(savedMin) ? savedMin : 5;
+    _selectedMinutes = _savedMinutes;
+
+    _soundMode = sp.getString(_kMode) ?? 'system';
+    _pickedUri = sp.getString(_kPickedUri);
+    _alsoPlayAppSound = sp.getBool(_kAlsoApp) ?? true;
+
+    setState(() => _loading = false);
   }
 
   Future<void> _save() async {
     final sp = await SharedPreferences.getInstance();
-    await sp.setInt(_kDuration, _durationSec);
+
+    await sp.setInt(_kDuration, _selectedMinutes * 60); // ✅ save seconds
     await sp.setString(_kMode, _soundMode);
     await sp.setBool(_kAlsoApp, _alsoPlayAppSound);
     if (_pickedUri != null) {
       await sp.setString(_kPickedUri, _pickedUri!);
     }
+
+    setState(() => _savedMinutes = _selectedMinutes);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -75,7 +87,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _soundMode = 'picked';
       });
 
-      await _save();
+      // ✅ NOT saving automatically — user must press Save
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -87,9 +99,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -101,21 +111,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'Alarm duration',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
-          Slider(
-            value: _durationSec.toDouble().clamp(5, 120),
-            min: 5,
-            max: 120,
-            divisions: 23,
-            label: '$_durationSec sec',
-            onChanged: (v) => setState(() => _durationSec = v.round()),
-            onChangeEnd: (_) => _save(),
+          const SizedBox(height: 10),
+
+          DropdownButtonFormField<int>(
+            value: _selectedMinutes,
+            decoration: const InputDecoration(labelText: 'Duration (minutes)'),
+            items: _minuteOptions
+                .map((m) => DropdownMenuItem(
+              value: m,
+              child: Text('$m minutes'),
+            ))
+                .toList(),
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() => _selectedMinutes = v);
+            },
           ),
-          Text('Rings for $_durationSec seconds'),
+
+          const SizedBox(height: 8),
+          Text('Current saved: $_savedMinutes minutes'),
 
           const SizedBox(height: 24),
           const Divider(),
-
           const SizedBox(height: 16),
+
           const Text(
             'Alarm tone',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -124,9 +143,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           RadioListTile<String>(
             value: 'system',
             groupValue: _soundMode,
-            onChanged: (v) async {
-              setState(() => _soundMode = 'system');
-              await _save();
+            onChanged: (v) {
+              setState(() {
+                _soundMode = 'system';
+                _pickedUri = null; // ✅ remove picked tone if system is chosen
+              });
             },
             title: const Text('Use system default alarm tone'),
           ),
@@ -138,26 +159,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: _pickAlarmTone,
           ),
 
-          ListTile(
-            title: const Text("Enable Alarm Permissions"),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.push('/permissions'),
-          ),
-
-
           // SwitchListTile(
           //   title: const Text('Also play app alarm sound (alarm.mp3)'),
           //   subtitle: const Text('Plays together with selected tone'),
           //   value: _alsoPlayAppSound,
-          //   onChanged: (v) async {
-          //     setState(() => _alsoPlayAppSound = v);
-          //     await _save();
-          //   },
+          //   onChanged: (v) => setState(() => _alsoPlayAppSound = v),
           // ),
 
           const SizedBox(height: 16),
           ElevatedButton(
-            onPressed: _save,
+            onPressed: _save, // ✅ Save-only
             child: const Text('Save'),
           ),
         ],
