@@ -24,14 +24,18 @@ class AlarmActivity : Activity() {
     private var player: MediaPlayer? = null
     private val handler = Handler(Looper.getMainLooper())
 
-    // Keys to persist "active until STOP" across repeats
+    // Keys to persist "active until TAKEN" across repeats
     private fun activeKey(alarmId: Int) = "alarm_active_$alarmId"
 
     // One stable repeat id per alarm instance
     private fun repeatId(alarmId: Int): Int {
-        // If alarmId is already huge, keep safe
         val base = if (alarmId == 0) (System.currentTimeMillis() % 500000).toInt() else alarmId
         return base + 900000
+    }
+
+    // ✅ raw alarm sound (same as notification channel sound)
+    private fun rawAlarmUri(): Uri {
+        return Uri.parse("android.resource://$packageName/raw/alarm")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,53 +73,67 @@ class AlarmActivity : Activity() {
         // settings from Flutter shared_preferences
         val sp = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
         val durationSec = sp.getLong("flutter.alarm_duration_sec", 300L).toInt().coerceIn(5, 60 * 60)
-        val soundMode = sp.getString("flutter.alarm_sound_mode", "system") ?: "system"
+        val soundMode = sp.getString("flutter.alarm_sound_mode", "app") ?: "app"
         val pickedUri = sp.getString("flutter.alarm_picked_uri", null)
 
         Log.d("AlarmActivity", "alarmId=$alarmId duration=$durationSec mode=$soundMode picked=$pickedUri")
 
-        // ✅ Mark this alarm as ACTIVE (until user presses STOP)
+        // ✅ Mark this alarm as ACTIVE (until user presses TAKEN)
         sp.edit().putBoolean(activeKey(alarmId), true).apply()
 
         startLoopingSound(soundMode, pickedUri)
+
+        // ✅ Rename buttons
+        val btnTaken = findViewById<Button>(R.id.btnStop)
+        val btnSkip = findViewById<Button>(R.id.btnSnooze)
+
+        btnTaken.text = "Taken"
+        btnSkip.text = "Skip for 5 minutes"
 
         // ✅ auto-stop after duration
         handler.postDelayed({
             stopSound()
 
-            // ✅ If not STOPPED, schedule next ring in 5 minutes
+            // ✅ If not TAKEN, schedule next ring in 5 minutes
             scheduleNextRepeat(alarmId, title, body)
 
             finish()
         }, durationSec * 1000L)
 
-        // STOP (stops forever)
-        findViewById<Button>(R.id.btnStop).setOnClickListener {
+        // ✅ TAKEN (stops forever)
+        btnTaken.setOnClickListener {
             stopSound()
 
             val sp2 = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
             sp2.edit().putBoolean(activeKey(alarmId), false).apply()
 
             cancelRepeats(alarmId)
-
             finish()
         }
 
-        // SNOOZE (5 minutes) => same as "repeat in 5"
-        findViewById<Button>(R.id.btnSnooze).setOnClickListener {
+        // ✅ SKIP (5 minutes)
+        btnSkip.setOnClickListener {
             stopSound()
-            scheduleNextRepeat(alarmId, title, body) // 5 minutes
+            scheduleNextRepeat(alarmId, title, body)
             finish()
         }
     }
 
     private fun resolveAlarmUri(mode: String, pickedUri: String?): Uri {
         return when (mode) {
+            // ✅ Same as notification channel sound
+            "app" -> rawAlarmUri()
+
+            // picked from ringtone picker
             "picked" -> pickedUri?.takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                ?: rawAlarmUri()
+
+            // system alarm
             "system" -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-            else -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-        } ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                ?: rawAlarmUri()
+
+            else -> rawAlarmUri()
+        }
     }
 
     private fun startLoopingSound(mode: String, pickedUri: String?) {
@@ -140,12 +158,11 @@ class AlarmActivity : Activity() {
         } catch (e: Throwable) {
             Log.e("AlarmActivity", "MediaPlayer play failed: $e")
 
-            // fallback system alarm
+            // ✅ fallback to raw first, then system
             try {
                 stopSound()
-                val fallback = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                 val mp2 = MediaPlayer()
-                mp2.setDataSource(this, fallback)
+                mp2.setDataSource(this, rawAlarmUri())
                 mp2.isLooping = true
                 mp2.setAudioAttributes(
                     AudioAttributes.Builder()
@@ -156,6 +173,24 @@ class AlarmActivity : Activity() {
                 mp2.prepare()
                 mp2.start()
                 player = mp2
+                return
+            } catch (_: Throwable) {}
+
+            try {
+                stopSound()
+                val fallback = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                val mp3 = MediaPlayer()
+                mp3.setDataSource(this, fallback)
+                mp3.isLooping = true
+                mp3.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                mp3.prepare()
+                mp3.start()
+                player = mp3
             } catch (e2: Throwable) {
                 Log.e("AlarmActivity", "Fallback sound failed: $e2")
             }

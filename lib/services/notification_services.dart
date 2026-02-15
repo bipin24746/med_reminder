@@ -12,37 +12,62 @@ class NotificationService {
   static final FlutterLocalNotificationsPlugin _plugin =
   FlutterLocalNotificationsPlugin();
 
-  // Alarm channel constants
   static const String _channelId = 'med_alarm_channel';
   static const String _channelName = 'Medicine Alarms';
 
-  // We use this to open AlarmActivity (native)
+  // Opens AlarmActivity from notification tap/action
   static const MethodChannel _alarmChannel = MethodChannel('alarm_settings');
 
   static Future<void> init() async {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidInit);
 
-    // ✅ handle notification tap
     await _plugin.initialize(
-      settings: initSettings,
+      settings: initSettings, // ✅ v20 requires named param
       onDidReceiveNotificationResponse: (resp) async {
+        final action = resp.actionId;
         final payload = resp.payload ?? '';
-        if (payload.startsWith('alarm:')) {
-          final data = payload.substring(6); // remove "alarm:"
-          final parts = data.split('|');
-          final title = parts.isNotEmpty ? parts[0] : 'Medicine Reminder';
-          final body = parts.length > 1 ? parts[1] : 'Time to take your medicine';
 
+        String title = 'Medicine Reminder';
+        String body = 'Time to take your medicine';
+
+        if (payload.startsWith('alarm:')) {
+          final data = payload.substring(6);
+          final parts = data.split('|');
+          title = parts.isNotEmpty ? parts[0] : title;
+          body = parts.length > 1 ? parts[1] : body;
+        }
+
+        // ✅ TAKEN button: just dismiss notification (you can also log if needed)
+        if (action == 'TAKEN') {
+          final id = resp.id ?? 0;
+          if (id != 0) await _plugin.cancel(id: id);
+          return;
+        }
+
+        // ✅ SKIP button: open AlarmActivity (native will schedule repeat)
+        if (action == 'SKIP_5') {
+          try {
+            await _alarmChannel.invokeMethod('openAlarmActivity', {
+              'title': title,
+              'body': body,
+              // you can also pass id if you want
+            });
+          } catch (e) {
+            if (kDebugMode) debugPrint('Failed to open AlarmActivity: $e');
+          }
+          return;
+        }
+
+        // ✅ Normal tap: open AlarmActivity
+        if (payload.startsWith('alarm:')) {
           try {
             await _alarmChannel.invokeMethod('openAlarmActivity', {
               'title': title,
               'body': body,
             });
           } catch (e) {
-            if (kDebugMode) {
-              debugPrint('Failed to open AlarmActivity: $e');
-            }
+            if (kDebugMode) debugPrint('Failed to open AlarmActivity: $e');
           }
         }
       },
@@ -55,13 +80,11 @@ class NotificationService {
     // Android 13+ permission
     await androidPlugin?.requestNotificationsPermission();
 
-    // ✅ IMPORTANT: channel settings are cached by Android.
-    // Delete + recreate so new sound/importance applies.
+    // Channel settings cached by Android → delete + recreate
     try {
       await androidPlugin?.deleteNotificationChannel(channelId: _channelId);
     } catch (_) {}
 
-    // v20 uses positional args for channel constructor:
     const channel = AndroidNotificationChannel(
       _channelId,
       _channelName,
@@ -100,19 +123,34 @@ class NotificationService {
         visibility: NotificationVisibility.public,
         fullScreenIntent: true,
         audioAttributesUsage: AudioAttributesUsage.alarm,
+
+        // ✅ ACTION BUTTONS
+        actions: <AndroidNotificationAction>[
+          const AndroidNotificationAction(
+            'SKIP_5',
+            'Skip for 5 minutes',
+            showsUserInterface: true,
+          ),
+          const AndroidNotificationAction(
+            'TAKEN',
+            'Taken',
+            showsUserInterface: false,
+            cancelNotification: true,
+          ),
+        ],
       ),
     );
 
     await _plugin.show(
-      id: id,
+      id: id, // ✅ named param in v20
       title: title,
       body: body,
-      notificationDetails: details,
+      notificationDetails: details, // ✅ named param in v20
       payload: 'alarm:$title|$body',
     );
   }
 
-  /// Cancel the notification IDs for a medicine
+  /// Cancel notification IDs for a medicine
   static Future<void> cancelForMedicine(int medicineId) async {
     const maxPerMed = 80;
     final futures = <Future<void>>[];
@@ -123,8 +161,7 @@ class NotificationService {
     await Future.wait(futures);
   }
 
-  /// Optional: Schedule using flutter_local_notifications (not AlarmManager)
-  /// (Works, but on some devices it may not behave like a true alarm)
+  /// Optional schedule using flutter_local_notifications (not AlarmManager)
   static Future<void> scheduleMedicine(Medicine med) async {
     if (med.id == null) {
       throw Exception('Medicine id is null. Insert into DB first.');
@@ -173,14 +210,14 @@ class NotificationService {
         );
 
         await _plugin.zonedSchedule(
-          id: id,
-          scheduledDate: scheduledLocal,
-          notificationDetails: details,
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          id: id, // ✅ named
           title: 'Time for ${med.name}',
-          body:
-          (med.note?.isNotEmpty == true) ? med.note! : 'Take your medicine',
-          payload: 'alarm:Time for ${med.name}|${(med.note?.isNotEmpty == true) ? med.note! : 'Take your medicine'}',
+          body: (med.note?.isNotEmpty == true) ? med.note! : 'Take your medicine',
+          scheduledDate: scheduledLocal, // ✅ named
+          notificationDetails: details, // ✅ named
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          payload:
+          'alarm:Time for ${med.name}|${(med.note?.isNotEmpty == true) ? med.note! : 'Take your medicine'}',
           matchDateTimeComponents: null,
         );
 

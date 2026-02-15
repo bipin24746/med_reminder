@@ -4,19 +4,42 @@ import 'package:go_router/go_router.dart';
 import 'package:med_reminder_fixed/features/meds/add_flow/add_med_flow_controller.dart';
 import '../../../../providers/providers.dart';
 
-class Step3FrequencyScreen extends ConsumerWidget {
+class Step3FrequencyScreen extends ConsumerStatefulWidget {
   const Step3FrequencyScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<Step3FrequencyScreen> createState() => _Step3FrequencyScreenState();
+}
+
+class _Step3FrequencyScreenState extends ConsumerState<Step3FrequencyScreen> {
+  final _daysCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _daysCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final flow = ref.watch(addMedFlowProvider);
     final isEdit = flow.editingId != null;
+
+    // Keep textfield in sync (only when value changed externally)
+    final flowDaysStr = flow.days.toString();
+    if (_daysCtrl.text != flowDaysStr) {
+      _daysCtrl.text = flowDaysStr;
+      _daysCtrl.selection = TextSelection.fromPosition(
+        TextPosition(offset: _daysCtrl.text.length),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(title: Text('${isEdit ? "Edit" : "Add"} Medication (3/7)')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
               'How often do you take it?',
@@ -24,23 +47,94 @@ class Step3FrequencyScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
 
-            _bigStepperCard(
-              title: 'Times per day',
-              value: flow.timesPerDay,
-              onMinus: () => _setTimesPerDay(ref, (flow.timesPerDay - 1).clamp(1, 6)),
-              onPlus: () => _setTimesPerDay(ref, (flow.timesPerDay + 1).clamp(1, 6)),
+            // ✅ Times per day dropdown (FULL WIDTH)
+            _card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Times per day',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<int>(
+                    value: flow.timesPerDay.clamp(1, 6),
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+                    ),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black,
+                    ),
+                    items: List.generate(6, (i) {
+                      final v = i + 1;
+                      return DropdownMenuItem(
+                        value: v,
+                        child: Text(
+                          '$v times per day',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                        ),
+                      );
+                    }),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      _setTimesPerDay(v);
+                    },
+                  ),
+                ],
+              ),
             ),
+
+
             const SizedBox(height: 12),
 
-            _bigStepperCard(
-              title: 'For how many days',
-              value: flow.days,
-              onMinus: () => ref.read(addMedFlowProvider.notifier).setDays((flow.days - 1).clamp(1, 365)),
-              onPlus: () => ref.read(addMedFlowProvider.notifier).setDays((flow.days + 1).clamp(1, 365)),
+            // ✅ Days input
+            _card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'For how many days',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _daysCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      hintText: 'Enter no. of days (1 - 365)',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (txt) {
+                      final n = int.tryParse(txt);
+                      if (n == null) return; // don’t update while typing invalid
+                      if (n < 1 || n > 365) return;
+                      ref.read(addMedFlowProvider.notifier).setDays(n);
+                    },
+                    onEditingComplete: () {
+                      final n = int.tryParse(_daysCtrl.text.trim());
+                      if (n == null || n < 1 || n > 365) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Days must be between 1 and 365')),
+                        );
+                        _daysCtrl.text = flow.days.toString();
+                      } else {
+                        ref.read(addMedFlowProvider.notifier).setDays(n);
+                      }
+                      FocusScope.of(context).unfocus();
+                    },
+                  ),
+                ],
+              ),
             ),
 
             const SizedBox(height: 12),
+
+            // Start date (same as yours)
             ListTile(
+              contentPadding: EdgeInsets.zero,
               title: const Text('Start date', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
               subtitle: Text(
                 '${flow.startDate.year}-${flow.startDate.month.toString().padLeft(2, '0')}-${flow.startDate.day.toString().padLeft(2, '0')}',
@@ -61,6 +155,7 @@ class Step3FrequencyScreen extends ConsumerWidget {
             ),
 
             const Spacer(),
+
             Row(
               children: [
                 Expanded(
@@ -72,7 +167,17 @@ class Step3FrequencyScreen extends ConsumerWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () => context.push('/meds/add/times'),
+                    onPressed: () {
+                      // final validation before next
+                      final n = int.tryParse(_daysCtrl.text.trim());
+                      if (n == null || n < 1 || n > 365) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Days must be between 1 and 365')),
+                        );
+                        return;
+                      }
+                      context.push('/meds/add/times');
+                    },
                     child: const Text('Next'),
                   ),
                 ),
@@ -84,10 +189,10 @@ class Step3FrequencyScreen extends ConsumerWidget {
     );
   }
 
-  void _setTimesPerDay(WidgetRef ref, int v) {
+  void _setTimesPerDay(int v) {
     ref.read(addMedFlowProvider.notifier).setTimesPerDay(v);
 
-    // ensure times list length matches
+    // keep times list length == v
     final flow = ref.read(addMedFlowProvider);
     final times = List<TimeOfDay>.from(flow.times);
 
@@ -97,28 +202,16 @@ class Step3FrequencyScreen extends ConsumerWidget {
     while (times.length > v) {
       times.removeLast();
     }
+
     ref.read(addMedFlowProvider.notifier).setTimes(times);
   }
 
-  Widget _bigStepperCard({
-    required String title,
-    required int value,
-    required VoidCallback onMinus,
-    required VoidCallback onPlus,
-  }) {
+  Widget _card({required Widget child}) {
     return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-            ),
-            IconButton(onPressed: onMinus, icon: const Icon(Icons.remove_circle_outline, size: 30)),
-            Text('$value', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-            IconButton(onPressed: onPlus, icon: const Icon(Icons.add_circle_outline, size: 30)),
-          ],
-        ),
+        padding: const EdgeInsets.all(14),
+        child: child,
       ),
     );
   }

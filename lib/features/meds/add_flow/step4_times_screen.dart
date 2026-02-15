@@ -44,7 +44,7 @@ class Step4TimesScreen extends ConsumerWidget {
                       ),
                       trailing: const Icon(Icons.access_time, size: 30),
                       onTap: () async {
-                        final picked = await showTimePicker(context: context, initialTime: t);
+                        final picked = await showTimePicker(context: context, initialTime: t,initialEntryMode: TimePickerEntryMode.input);
                         if (picked != null) {
                           times[i] = picked;
                           ref.read(addMedFlowProvider.notifier).setTimes(times);
