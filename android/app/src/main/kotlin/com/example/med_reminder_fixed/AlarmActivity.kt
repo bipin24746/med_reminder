@@ -2,6 +2,7 @@ package com.example.med_reminder_fixed
 
 import android.app.Activity
 import android.app.AlarmManager
+import android.app.AlertDialog
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
@@ -24,16 +25,13 @@ class AlarmActivity : Activity() {
     private var player: MediaPlayer? = null
     private val handler = Handler(Looper.getMainLooper())
 
-    // Keys to persist "active until TAKEN" across repeats
     private fun activeKey(alarmId: Int) = "alarm_active_$alarmId"
 
-    // One stable repeat id per alarm instance
     private fun repeatId(alarmId: Int): Int {
         val base = if (alarmId == 0) (System.currentTimeMillis() % 500000).toInt() else alarmId
         return base + 900000
     }
 
-    // ✅ raw alarm sound (same as notification channel sound)
     private fun rawAlarmUri(): Uri {
         return Uri.parse("android.resource://$packageName/raw/alarm")
     }
@@ -41,7 +39,6 @@ class AlarmActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // ✅ Wake screen + show over lockscreen (Android 9–15)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
@@ -56,12 +53,15 @@ class AlarmActivity : Activity() {
 
         setContentView(R.layout.activity_alarm)
 
-        // extras
         val alarmId = intent.getIntExtra("id", 0)
+        val streamId = intent.getIntExtra("streamId", alarmId)
+        val scheduledAt = intent.getLongExtra("scheduledAt", 0L)
+        val openSkipDialog = intent.getBooleanExtra("openSkipDialog", false)
+
         val title = intent.getStringExtra("title") ?: "Medicine Reminder"
         val body = intent.getStringExtra("body") ?: "Time to take your medicine"
 
-        // ✅ cancel notification to stop its sound
+        // cancel notif to stop sound
         try {
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (alarmId != 0) nm.cancel(alarmId)
@@ -70,68 +70,90 @@ class AlarmActivity : Activity() {
         findViewById<TextView>(R.id.alarmTitle).text = title
         findViewById<TextView>(R.id.alarmBody).text = body
 
-        // settings from Flutter shared_preferences
         val sp = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+
         val durationSec = sp.getLong("flutter.alarm_duration_sec", 300L).toInt().coerceIn(5, 60 * 60)
+
+        // ✅ Selected snooze seconds from settings
+        val snoozeSec = sp.getLong("flutter.alarm_snooze_sec", 300L).toInt().coerceIn(60, 24 * 60 * 60)
+        val snoozeMin = (snoozeSec / 60).coerceAtLeast(1)
+
         val soundMode = sp.getString("flutter.alarm_sound_mode", "app") ?: "app"
         val pickedUri = sp.getString("flutter.alarm_picked_uri", null)
 
-        Log.d("AlarmActivity", "alarmId=$alarmId duration=$durationSec mode=$soundMode picked=$pickedUri")
+        Log.d("AlarmActivity", "alarmId=$alarmId streamId=$streamId scheduledAt=$scheduledAt duration=$durationSec snoozeSec=$snoozeSec")
 
-        // ✅ Mark this alarm as ACTIVE (until user presses TAKEN)
         sp.edit().putBoolean(activeKey(alarmId), true).apply()
 
         startLoopingSound(soundMode, pickedUri)
 
-        // ✅ Rename buttons
         val btnTaken = findViewById<Button>(R.id.btnStop)
-        val btnSkip = findViewById<Button>(R.id.btnSnooze)
+        val btnSnooze = findViewById<Button>(R.id.btnSnooze)
+        val btnSkipNow = findViewById<Button>(R.id.btnSkipNow)
 
         btnTaken.text = "Taken"
-        btnSkip.text = "Skip for 5 minutes"
+        btnSnooze.text = "Snooze $snoozeMin minutes"
+        btnSkipNow.text = "Skip for now"
 
-        // ✅ auto-stop after duration
+        // Auto stop after duration → schedule repeat with snoozeSec
         handler.postDelayed({
             stopSound()
-
-            // ✅ If not TAKEN, schedule next ring in 5 minutes
-            scheduleNextRepeat(alarmId, title, body)
-
+            scheduleSnoozeRepeat(alarmId, title, body, snoozeSec)
             finish()
         }, durationSec * 1000L)
 
-        // ✅ TAKEN (stops forever)
+        // TAKEN
         btnTaken.setOnClickListener {
             stopSound()
-
-            val sp2 = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-            sp2.edit().putBoolean(activeKey(alarmId), false).apply()
-
+            sp.edit().putBoolean(activeKey(alarmId), false).apply()
             cancelRepeats(alarmId)
             finish()
         }
 
-        // ✅ SKIP (5 minutes)
-        btnSkip.setOnClickListener {
+        // SNOOZE (selected minutes)
+        btnSnooze.setOnClickListener {
             stopSound()
-            scheduleNextRepeat(alarmId, title, body)
+            scheduleSnoozeRepeat(alarmId, title, body, snoozeSec)
             finish()
         }
+
+        // SKIP NOW (only this occurrence)
+        btnSkipNow.setOnClickListener {
+            stopSound()
+            showSkipReasonDialog(streamId, scheduledAt)
+        }
+
+        if (openSkipDialog) {
+            stopSound()
+            handler.post { showSkipReasonDialog(streamId, scheduledAt) }
+        }
+    }
+
+    private fun showSkipReasonDialog(streamId: Int, scheduledAt: Long) {
+        val reasons = arrayOf(
+            "Already took it",
+            "Not feeling well",
+            "No medicine available",
+            "Doctor told to pause",
+            "Other"
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("Why are you skipping this dose?")
+            .setItems(reasons) { _, which ->
+                val reason = reasons[which]
+                SkipStore.markSkipped(this, streamId, scheduledAt, reason)
+                finish()
+            }
+            .setNegativeButton("Cancel") { dialog, _ -> dialog.dismiss() }
+            .show()
     }
 
     private fun resolveAlarmUri(mode: String, pickedUri: String?): Uri {
         return when (mode) {
-            // ✅ Same as notification channel sound
             "app" -> rawAlarmUri()
-
-            // picked from ringtone picker
-            "picked" -> pickedUri?.takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
-                ?: rawAlarmUri()
-
-            // system alarm
-            "system" -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: rawAlarmUri()
-
+            "picked" -> pickedUri?.takeIf { it.isNotBlank() }?.let { Uri.parse(it) } ?: rawAlarmUri()
+            "system" -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM) ?: rawAlarmUri()
             else -> rawAlarmUri()
         }
     }
@@ -141,7 +163,6 @@ class AlarmActivity : Activity() {
 
         try {
             stopSound()
-
             val mp = MediaPlayer()
             mp.setDataSource(this, uri)
             mp.isLooping = true
@@ -154,65 +175,26 @@ class AlarmActivity : Activity() {
             mp.prepare()
             mp.start()
             player = mp
-
         } catch (e: Throwable) {
-            Log.e("AlarmActivity", "MediaPlayer play failed: $e")
-
-            // ✅ fallback to raw first, then system
-            try {
-                stopSound()
-                val mp2 = MediaPlayer()
-                mp2.setDataSource(this, rawAlarmUri())
-                mp2.isLooping = true
-                mp2.setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                mp2.prepare()
-                mp2.start()
-                player = mp2
-                return
-            } catch (_: Throwable) {}
-
-            try {
-                stopSound()
-                val fallback = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                val mp3 = MediaPlayer()
-                mp3.setDataSource(this, fallback)
-                mp3.isLooping = true
-                mp3.setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                mp3.prepare()
-                mp3.start()
-                player = mp3
-            } catch (e2: Throwable) {
-                Log.e("AlarmActivity", "Fallback sound failed: $e2")
-            }
+            Log.e("AlarmActivity", "MediaPlayer failed: $e")
         }
     }
 
-    // ✅ schedule next ring in 5 minutes if alarm still active
-    private fun scheduleNextRepeat(alarmId: Int, title: String, body: String) {
+    private fun scheduleSnoozeRepeat(alarmId: Int, title: String, body: String, snoozeSec: Int) {
         val sp = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
         val isActive = sp.getBoolean(activeKey(alarmId), false)
-        if (!isActive) {
-            Log.d("AlarmActivity", "Not scheduling repeat because alarm is inactive")
-            return
-        }
+        if (!isActive) return
 
         val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val id = repeatId(alarmId)
+        val triggerAt = System.currentTimeMillis() + snoozeSec * 1000L
 
         val receiverIntent = Intent(this, AlarmReceiver::class.java).apply {
             putExtra("title", title)
             putExtra("body", body)
             putExtra("id", id)
+            putExtra("scheduledAt", triggerAt)
+            putExtra("isSnooze", true)
         }
 
         val pi = PendingIntent.getBroadcast(
@@ -220,22 +202,16 @@ class AlarmActivity : Activity() {
             id,
             receiverIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or
-                    (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-                        PendingIntent.FLAG_IMMUTABLE else 0)
+                    (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         )
-
-        val triggerAt = System.currentTimeMillis() + 5 * 60 * 1000L
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
         } else {
             alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pi)
         }
-
-        Log.d("AlarmActivity", "✅ Next repeat scheduled id=$id at=$triggerAt")
     }
 
-    // ✅ stop future repeats
     private fun cancelRepeats(alarmId: Int) {
         val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val id = repeatId(alarmId)
@@ -246,12 +222,9 @@ class AlarmActivity : Activity() {
             id,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or
-                    (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-                        PendingIntent.FLAG_IMMUTABLE else 0)
+                    (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         )
         alarmManager.cancel(pi)
-
-        Log.d("AlarmActivity", "✅ Repeats cancelled id=$id")
     }
 
     private fun stopSound() {

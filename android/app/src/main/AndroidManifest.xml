@@ -9,20 +9,21 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
-
     <application
         android:name="${applicationName}"
         android:label="Medicine Reminder"
         android:icon="@mipmap/ic_launcher">
 
-        <!-- Alarm receiver (AlarmManager triggers this) -->
         <receiver
             android:name=".AlarmReceiver"
             android:exported="false"
             android:directBootAware="true" />
 
+        <!-- ✅ ADD THIS -->
+        <receiver
+            android:name=".AlarmActionReceiver"
+            android:exported="false" />
 
-        <!-- Alarm screen -->
         <activity
             android:name=".AlarmActivity"
             android:exported="false"
@@ -33,7 +34,6 @@
             android:taskAffinity=""
             android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
 
-        <!-- Main Flutter activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"

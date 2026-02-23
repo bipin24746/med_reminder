@@ -1,57 +1,186 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="24dp"
-    android:background="#E3F2FD"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/alarmScroll"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
-
-    <TextView
-        android:id="@+id/alarmTitle"
-        android:text="Medicine Reminder"
-        android:textSize="28sp"
-        android:textStyle="bold"
-        android:textColor="#0D47A1"
-        android:gravity="center"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
-
-    <TextView
-        android:id="@+id/alarmBody"
-        android:text="Time to take your medicine"
-        android:textSize="20sp"
-        android:textColor="#263238"
-        android:gravity="center"
-        android:layout_marginTop="16dp"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="#0B1220">
 
     <LinearLayout
-        android:orientation="horizontal"
-        android:gravity="center"
-        android:layout_marginTop="32dp"
+        android:id="@+id/alarmRoot"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="18dp">
 
-        <Button
-            android:id="@+id/btnSnooze"
-            android:text="SNOOZE"
-            android:textSize="20sp"
-            android:layout_marginEnd="16dp"
-            android:padding="16dp"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content" />
+        <!-- Top header row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
+            <!-- Icon bubble -->
+            <FrameLayout
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="#121B2F"
+                android:padding="14dp">
+
+                <ImageView
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:src="@mipmap/ic_launcher"
+                    android:contentDescription="Alarm"
+                    android:tint="#A7C7FF" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Medicine Reminder"
+                    android:textStyle="bold"
+                    android:textSize="22sp"
+                    android:textColor="#EAF1FF" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Please take your dose now"
+                    android:textSize="14sp"
+                    android:textColor="#9FB2D6"
+                    android:layout_marginTop="4dp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Space -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="16dp" />
+
+        <!-- Main "Card" (using background + padding) -->
+        <LinearLayout
+            android:id="@+id/contentCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#0F172A"
+            android:padding="18dp">
+
+            <!-- Title set from Kotlin -->
+            <TextView
+                android:id="@+id/alarmTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Time for your medicine"
+                android:textStyle="bold"
+                android:textSize="24sp"
+                android:textColor="#EAF1FF" />
+
+            <!-- Body set from Kotlin -->
+            <TextView
+                android:id="@+id/alarmBody"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Take your medicine now."
+                android:textSize="16sp"
+                android:textColor="#B9C7E6"
+                android:layout_marginTop="10dp" />
+
+            <!-- Tip box -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="#121B2F"
+                android:padding="12dp"
+                android:layout_marginTop="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Tip"
+                    android:textStyle="bold"
+                    android:textSize="14sp"
+                    android:textColor="#A7C7FF" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Press Taken if you took it. Snooze will ring again after your selected minutes."
+                    android:textSize="14sp"
+                    android:textColor="#9FB2D6"
+                    android:layout_marginTop="6dp" />
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- Space -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="18dp" />
+
+        <!-- Taken button -->
         <Button
             android:id="@+id/btnStop"
-            android:text="STOP"
-            android:textSize="20sp"
-            android:padding="16dp"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content" />
-    </LinearLayout>
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="Taken"
+            android:textAllCaps="false"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:backgroundTint="#22C55E"
+            android:textColor="#07130B" />
 
-</LinearLayout>
+        <!-- Space -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="12dp" />
+
+        <!-- Row: Snooze + Skip now -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnSnooze"
+                android:layout_width="0dp"
+                android:layout_height="54dp"
+                android:layout_weight="1"
+                android:text="Snooze"
+                android:textAllCaps="false"
+                android:textSize="15sp"
+                android:backgroundTint="#1E293B"
+                android:textColor="#EAF1FF" />
+
+            <View
+                android:layout_width="12dp"
+                android:layout_height="1dp" />
+
+            <Button
+                android:id="@+id/btnSkipNow"
+                android:layout_width="0dp"
+                android:layout_height="54dp"
+                android:layout_weight="1"
+                android:text="Skip now"
+                android:textAllCaps="false"
+                android:textSize="15sp"
+                android:backgroundTint="#2B1D2A"
+                android:textColor="#FFD6E7" />
+        </LinearLayout>
+
+        <!-- Bottom padding -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="10dp" />
+
+    </LinearLayout>
+</ScrollView>

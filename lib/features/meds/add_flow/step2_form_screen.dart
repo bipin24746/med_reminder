@@ -12,7 +12,7 @@ class Step2FormScreen extends ConsumerWidget {
     final flow = ref.watch(addMedFlowProvider);
 
     final items = const [
-      ('pill', Icons.local_hospital, 'Pill / Tablet'),
+      ('pill', Icons.medication_rounded, 'Pill / Tablet'),
       ('capsule', Icons.medication_outlined, 'Capsule'),
       ('liquid', Icons.water_drop, 'Liquid / Syrup'),
       ('injection', Icons.vaccines, 'Injection'),

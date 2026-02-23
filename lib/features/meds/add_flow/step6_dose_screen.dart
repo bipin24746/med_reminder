@@ -37,7 +37,7 @@ class _Step6DoseScreenState extends ConsumerState<Step6DoseScreen> {
     final quick = _quickDose(flow.form);
 
     return Scaffold(
-      appBar: AppBar(title: Text('${isEdit ? "Edit" : "Add"} Medication (6/7)')),
+      appBar: AppBar(title: Text('${isEdit ? "Edit" : "Add"} Medication (5/6)')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

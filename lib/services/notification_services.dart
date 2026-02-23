@@ -15,15 +15,15 @@ class NotificationService {
   static const String _channelId = 'med_alarm_channel';
   static const String _channelName = 'Medicine Alarms';
 
-  // Opens AlarmActivity from notification tap/action
-  static const MethodChannel _alarmChannel = MethodChannel('alarm_settings');
+  // ✅ FIXED: must match MainActivity channel: "alarm_native"
+  static const MethodChannel _alarmChannel = MethodChannel('alarm_native');
 
   static Future<void> init() async {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidInit);
 
     await _plugin.initialize(
-      settings: initSettings, // ✅ v20 requires named param
+      settings: initSettings,
       onDidReceiveNotificationResponse: (resp) async {
         final action = resp.actionId;
         final payload = resp.payload ?? '';
@@ -38,20 +38,19 @@ class NotificationService {
           body = parts.length > 1 ? parts[1] : body;
         }
 
-        // ✅ TAKEN button: just dismiss notification (you can also log if needed)
+        // ✅ TAKEN: dismiss only
         if (action == 'TAKEN') {
           final id = resp.id ?? 0;
           if (id != 0) await _plugin.cancel(id: id);
           return;
         }
 
-        // ✅ SKIP button: open AlarmActivity (native will schedule repeat)
+        // ✅ SKIP_5: open native alarm activity (works even if app closed)
         if (action == 'SKIP_5') {
           try {
             await _alarmChannel.invokeMethod('openAlarmActivity', {
               'title': title,
               'body': body,
-              // you can also pass id if you want
             });
           } catch (e) {
             if (kDebugMode) debugPrint('Failed to open AlarmActivity: $e');
@@ -59,7 +58,7 @@ class NotificationService {
           return;
         }
 
-        // ✅ Normal tap: open AlarmActivity
+        // Normal tap
         if (payload.startsWith('alarm:')) {
           try {
             await _alarmChannel.invokeMethod('openAlarmActivity', {
@@ -73,11 +72,9 @@ class NotificationService {
       },
     );
 
-    final androidPlugin =
-    _plugin.resolvePlatformSpecificImplementation<
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
 
-    // Android 13+ permission
     await androidPlugin?.requestNotificationsPermission();
 
     // Channel settings cached by Android → delete + recreate
@@ -103,7 +100,6 @@ class NotificationService {
     }
   }
 
-  /// Show alarm-style notification NOW (used by AlarmManager callback)
   static Future<void> showImmediateAlarm({
     required int id,
     required String title,
@@ -123,8 +119,6 @@ class NotificationService {
         visibility: NotificationVisibility.public,
         fullScreenIntent: true,
         audioAttributesUsage: AudioAttributesUsage.alarm,
-
-        // ✅ ACTION BUTTONS
         actions: <AndroidNotificationAction>[
           const AndroidNotificationAction(
             'SKIP_5',
@@ -142,15 +136,14 @@ class NotificationService {
     );
 
     await _plugin.show(
-      id: id, // ✅ named param in v20
+      id: id,
       title: title,
       body: body,
-      notificationDetails: details, // ✅ named param in v20
+      notificationDetails: details,
       payload: 'alarm:$title|$body',
     );
   }
 
-  /// Cancel notification IDs for a medicine
   static Future<void> cancelForMedicine(int medicineId) async {
     const maxPerMed = 80;
     final futures = <Future<void>>[];
@@ -161,7 +154,6 @@ class NotificationService {
     await Future.wait(futures);
   }
 
-  /// Optional schedule using flutter_local_notifications (not AlarmManager)
   static Future<void> scheduleMedicine(Medicine med) async {
     if (med.id == null) {
       throw Exception('Medicine id is null. Insert into DB first.');
@@ -210,11 +202,11 @@ class NotificationService {
         );
 
         await _plugin.zonedSchedule(
-          id: id, // ✅ named
+          id: id,
           title: 'Time for ${med.name}',
           body: (med.note?.isNotEmpty == true) ? med.note! : 'Take your medicine',
-          scheduledDate: scheduledLocal, // ✅ named
-          notificationDetails: details, // ✅ named
+          scheduledDate: scheduledLocal,
+          notificationDetails: details,
           androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
           payload:
           'alarm:Time for ${med.name}|${(med.note?.isNotEmpty == true) ? med.note! : 'Take your medicine'}',

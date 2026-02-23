@@ -13,21 +13,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const MethodChannel _channel = MethodChannel('alarm_settings');
 
   static const String _kDuration = 'alarm_duration_sec';
-  static const String _kMode = 'alarm_sound_mode'; // system | picked
+  static const String _kSnoozeSec = 'alarm_snooze_sec'; // ✅ NEW
+  static const String _kMode = 'alarm_sound_mode'; // system | picked | app
   static const String _kPickedUri = 'alarm_picked_uri';
-  static const String _kAlsoApp = 'alarm_also_app_sound';
 
   bool _loading = true;
 
-  // ✅ dropdown minutes
   final List<int> _minuteOptions = const [5, 10, 15, 20, 25, 30];
 
-  int _selectedMinutes = 5; // ✅ default UI selection = 5
-  int _savedMinutes = 5;    // for display only
+  int _selectedDurationMin = 5;
+  int _savedDurationMin = 5;
+
+  int _selectedSnoozeMin = 5; // ✅ NEW
+  int _savedSnoozeMin = 5;    // ✅ NEW
 
   String _soundMode = 'system';
   String? _pickedUri;
-  bool _alsoPlayAppSound = true;
 
   @override
   void initState() {
@@ -38,15 +39,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _load() async {
     final sp = await SharedPreferences.getInstance();
 
-    final savedSec = sp.getInt(_kDuration) ?? 300; // ✅ default 5 min
-    final savedMin = (savedSec / 60).round();
+    final savedDurationSec = sp.getInt(_kDuration) ?? 300;
+    final savedDurationMin = (savedDurationSec / 60).round();
+    _savedDurationMin = _minuteOptions.contains(savedDurationMin) ? savedDurationMin : 5;
+    _selectedDurationMin = _savedDurationMin;
 
-    _savedMinutes = _minuteOptions.contains(savedMin) ? savedMin : 5;
-    _selectedMinutes = _savedMinutes;
+    // ✅ Snooze
+    final savedSnoozeSec = sp.getInt(_kSnoozeSec) ?? 300;
+    final savedSnoozeMin = (savedSnoozeSec / 60).round();
+    _savedSnoozeMin = _minuteOptions.contains(savedSnoozeMin) ? savedSnoozeMin : 5;
+    _selectedSnoozeMin = _savedSnoozeMin;
 
     _soundMode = sp.getString(_kMode) ?? 'system';
     _pickedUri = sp.getString(_kPickedUri);
-    _alsoPlayAppSound = sp.getBool(_kAlsoApp) ?? true;
 
     setState(() => _loading = false);
   }
@@ -54,14 +59,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _save() async {
     final sp = await SharedPreferences.getInstance();
 
-    await sp.setInt(_kDuration, _selectedMinutes * 60); // ✅ save seconds
+    await sp.setInt(_kDuration, _selectedDurationMin * 60);
+    await sp.setInt(_kSnoozeSec, _selectedSnoozeMin * 60); // ✅ NEW
     await sp.setString(_kMode, _soundMode);
-    await sp.setBool(_kAlsoApp, _alsoPlayAppSound);
+
     if (_pickedUri != null) {
       await sp.setString(_kPickedUri, _pickedUri!);
     }
 
-    setState(() => _savedMinutes = _selectedMinutes);
+    setState(() {
+      _savedDurationMin = _selectedDurationMin;
+      _savedSnoozeMin = _selectedSnoozeMin;
+    });
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -86,8 +95,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _pickedUri = uri;
         _soundMode = 'picked';
       });
-
-      // ✅ NOT saving automatically — user must press Save
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -108,28 +115,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           const Text(
-            'Alarm duration',
+            'Alarm duration (ring time)',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 10),
 
           DropdownButtonFormField<int>(
-            value: _selectedMinutes,
+            value: _selectedDurationMin,
             decoration: const InputDecoration(labelText: 'Duration (minutes)'),
             items: _minuteOptions
-                .map((m) => DropdownMenuItem(
-              value: m,
-              child: Text('$m minutes'),
-            ))
+                .map((m) => DropdownMenuItem(value: m, child: Text('$m minutes')))
                 .toList(),
-            onChanged: (v) {
-              if (v == null) return;
-              setState(() => _selectedMinutes = v);
-            },
+            onChanged: (v) => setState(() => _selectedDurationMin = v ?? 5),
           ),
-
           const SizedBox(height: 8),
-          Text('Current saved: $_savedMinutes minutes'),
+          Text('Saved duration: $_savedDurationMin minutes'),
+
+          const SizedBox(height: 24),
+          const Divider(),
+          const SizedBox(height: 16),
+
+          const Text(
+            'Snooze time',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+
+          DropdownButtonFormField<int>(
+            value: _selectedSnoozeMin,
+            decoration: const InputDecoration(labelText: 'Snooze (minutes)'),
+            items: _minuteOptions
+                .map((m) => DropdownMenuItem(value: m, child: Text('$m minutes')))
+                .toList(),
+            onChanged: (v) => setState(() => _selectedSnoozeMin = v ?? 5),
+          ),
+          const SizedBox(height: 8),
+          Text('Saved snooze: $_savedSnoozeMin minutes'),
 
           const SizedBox(height: 24),
           const Divider(),
@@ -146,7 +167,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (v) {
               setState(() {
                 _soundMode = 'system';
-                _pickedUri = null; // ✅ clear picked tone
+                _pickedUri = null;
               });
             },
             title: const Text('Use system default alarm tone'),
@@ -160,22 +181,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   : (_pickedUri ?? 'No tone picked'),
             ),
             trailing: const Icon(Icons.music_note),
-            onTap: _pickAlarmTone, // keep enabled OR disable if you want
+            onTap: _pickAlarmTone,
           ),
-
-
-          // SwitchListTile(
-          //   title: const Text('Also play app alarm sound (alarm.mp3)'),
-          //   subtitle: const Text('Plays together with selected tone'),
-          //   value: _alsoPlayAppSound,
-          //   onChanged: (v) => setState(() => _alsoPlayAppSound = v),
-          // ),
 
           const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: _save, // ✅ Save-only
-            child: const Text('Save'),
-          ),
+          ElevatedButton(onPressed: _save, child: const Text('Save')),
         ],
       ),
     );

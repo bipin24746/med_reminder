@@ -3,14 +3,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:med_reminder_fixed/features/meds/add_flow/add_med_flow_state.dart';
-import 'package:timezone/timezone.dart' as tz;
 
 import '../../../data/models/medicine.dart';
 import '../../../providers/providers.dart';
 import '../../../services/native_alarm_service.dart';
-import '../../../services/timezone_service.dart';
 import 'add_med_flow_controller.dart';
+import 'add_med_flow_state.dart';
 
 class Step7SummaryScreen extends ConsumerStatefulWidget {
   const Step7SummaryScreen({super.key});
@@ -22,17 +20,145 @@ class Step7SummaryScreen extends ConsumerStatefulWidget {
 class _Step7SummaryScreenState extends ConsumerState<Step7SummaryScreen> {
   bool _saving = false;
 
+  // Mon bit0 ... Sun bit6
+  int _weeklyMask(Set<int> days) {
+    int mask = 0;
+    for (final d in days) {
+      if (d < 1 || d > 7) continue;
+      mask |= (1 << (d - 1));
+    }
+    return mask;
+  }
+
+  DateTime _computeFirstTriggerLocal(AddMedFlowState flow, TimeOfDay t) {
+    final now = DateTime.now();
+
+    DateTime candidate = DateTime(
+      flow.startDate.year,
+      flow.startDate.month,
+      flow.startDate.day,
+      t.hour,
+      t.minute,
+    );
+
+    if (candidate.isBefore(now)) {
+      switch (flow.frequencyType) {
+        case MedFrequencyType.daily:
+          candidate = candidate.add(const Duration(days: 1));
+          break;
+
+        case MedFrequencyType.intervalHours:
+          candidate = now.add(Duration(hours: flow.intervalHours.clamp(1, 24)));
+          break;
+
+        case MedFrequencyType.weekly:
+        case MedFrequencyType.monthly:
+        // native scheduleNext() will find correct next slot based on mask/day
+          candidate = now.add(const Duration(minutes: 2));
+          break;
+      }
+    }
+
+    return candidate;
+  }
+
+  /// ✅ FIX: unique alarm ids per slotIndex (NOT minuteOfDay)
+  Future<void> _scheduleNativeAlarmsForFlow(AddMedFlowState flow, int medId) async {
+    const slotSize = 10000;
+
+    for (int slotIndex = 0; slotIndex < flow.times.length; slotIndex++) {
+      final t = flow.times[slotIndex];
+
+      // ✅ Unique always: medicineId * 10000 + slotIndex
+      final alarmId = medId * slotSize + slotIndex;
+      final firstLocal = _computeFirstTriggerLocal(flow, t);
+
+      await NativeAlarmService.schedule(
+        id: alarmId,
+        triggerAt: firstLocal,
+        title: "Time for ${flow.name}",
+        body: flow.note.trim().isNotEmpty ? flow.note.trim() : "Take your medicine",
+        extras: {
+          "freqType": flow.frequencyType.index,
+          "hour": t.hour,
+          "minute": t.minute,
+          "intervalHours": flow.intervalHours,
+          "weeklyMask": _weeklyMask(flow.weeklyDays),
+          "monthlyDay": flow.monthlyDay,
+
+          // ✅ critical: stable streamId
+          "streamId": alarmId,
+        },
+      );
+
+      // intervalHours uses only one stream
+      if (flow.frequencyType == MedFrequencyType.intervalHours) break;
+    }
+  }
+
+  String _formatTime(TimeOfDay t) {
+    final h = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
+    final m = t.minute.toString().padLeft(2, '0');
+    final ampm = t.period == DayPeriod.am ? 'AM' : 'PM';
+    return '$h:$m $ampm';
+  }
+
+  String _prettyForm(String form) {
+    switch (form) {
+      case 'pill':
+        return 'Tablet / Pill';
+      case 'liquid':
+        return 'Liquid';
+      case 'injection':
+        return 'Injection';
+      case 'drops':
+        return 'Drops';
+      case 'inhaler':
+        return 'Inhaler';
+      default:
+        return form;
+    }
+  }
+
+  String _prettyFrequency(AddMedFlowState flow) {
+    switch (flow.frequencyType) {
+      case MedFrequencyType.daily:
+        return 'Daily';
+      case MedFrequencyType.intervalHours:
+        return 'Every ${flow.intervalHours} hours';
+      case MedFrequencyType.weekly:
+        return 'Weekly';
+      case MedFrequencyType.monthly:
+        return 'Monthly (day ${flow.monthlyDay})';
+    }
+  }
+
+  String _prettyWeeklyDays(Set<int> days) {
+    const names = <int, String>{
+      1: 'Mon',
+      2: 'Tue',
+      3: 'Wed',
+      4: 'Thu',
+      5: 'Fri',
+      6: 'Sat',
+      7: 'Sun',
+    };
+    final sorted = days.toList()..sort();
+    if (sorted.isEmpty) return '-';
+    return sorted.map((d) => names[d] ?? '$d').join(', ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final flow = ref.watch(addMedFlowProvider);
     final isEdit = flow.editingId != null;
 
-    final timesText = flow.times.map((t) => _formatTime(t)).toList();
+    final timesText = flow.times.map(_formatTime).toList();
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('${isEdit ? "Edit" : "Add"} Medication (7/7)'),
-        automaticallyImplyLeading: true, // ✅ show back arrow
+        title: Text('${isEdit ? "Edit" : "Add"} Medication (6/6)'),
+        automaticallyImplyLeading: true,
       ),
       body: SafeArea(
         child: ListView(
@@ -66,9 +192,11 @@ class _Step7SummaryScreenState extends ConsumerState<Step7SummaryScreen> {
               title: 'Schedule',
               child: Column(
                 children: [
-                  _row('Times per day', '${flow.timesPerDay}'),
-                  const Divider(height: 20),
-                  _row('Days', '${flow.days}'),
+                  _row('Frequency', _prettyFrequency(flow)),
+                  if (flow.frequencyType == MedFrequencyType.weekly) ...[
+                    const Divider(height: 20),
+                    _row('Days', _prettyWeeklyDays(flow.weeklyDays)),
+                  ],
                   const Divider(height: 20),
                   _row(
                     'Start date',
@@ -160,7 +288,11 @@ class _Step7SummaryScreenState extends ConsumerState<Step7SummaryScreen> {
         Expanded(
           child: Text(
             left,
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black.withOpacity(0.65)),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Colors.black.withOpacity(0.65),
+            ),
           ),
         ),
         const SizedBox(width: 10),
@@ -175,33 +307,11 @@ class _Step7SummaryScreenState extends ConsumerState<Step7SummaryScreen> {
     );
   }
 
-  String _formatTime(TimeOfDay t) {
-    final h = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
-    final m = t.minute.toString().padLeft(2, '0');
-    final ampm = t.period == DayPeriod.am ? 'AM' : 'PM';
-    return '$h:$m $ampm';
-  }
-
-  String _prettyForm(String form) {
-    switch (form) {
-      case 'pill':
-        return 'Tablet / Pill';
-      case 'liquid':
-        return 'Liquid';
-      case 'injection':
-        return 'Injection';
-      case 'drops':
-        return 'Drops';
-      case 'inhaler':
-        return 'Inhaler';
-      default:
-        return form;
-    }
-  }
-
   Future<void> _save(BuildContext context, AddMedFlowState flow) async {
     if (flow.name.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Medicine name is missing')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Medicine name is missing')),
+      );
       return;
     }
 
@@ -209,35 +319,36 @@ class _Step7SummaryScreenState extends ConsumerState<Step7SummaryScreen> {
     setState(() => _saving = true);
 
     try {
-      // build times json (HH:mm)
       final timesStr = flow.times
           .map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
           .toList();
 
       final startMidnight = DateTime(flow.startDate.year, flow.startDate.month, flow.startDate.day);
 
-      final baseMed = Medicine(
+      final med = Medicine(
         id: flow.editingId,
         name: flow.name.trim(),
         note: flow.note.trim().isEmpty ? null : flow.note.trim(),
         timesPerDay: flow.timesPerDay,
-        days: flow.days,
         timezone: flow.timezone,
         timesJson: jsonEncode(timesStr),
         startDateMillis: startMidnight.millisecondsSinceEpoch,
         form: flow.form,
         doseAmount: flow.doseAmount.trim().isEmpty ? '1' : flow.doseAmount.trim(),
+
+        frequencyType: flow.frequencyType.index,
+        intervalHours: flow.intervalHours,
+        weeklyMask: _weeklyMask(flow.weeklyDays),
+        monthlyDay: flow.monthlyDay,
       );
 
-      // If editing: cancel old alarms first, then update
       if (flow.editingId != null) {
         await NativeAlarmService.cancelForMedicine(flow.editingId!);
-        await ref.read(medicineRepoProvider).update(baseMed);
-        await _scheduleNativeAlarms(baseMed);
+        await ref.read(medicineRepoProvider).update(med);
+        await _scheduleNativeAlarmsForFlow(flow, flow.editingId!);
       } else {
-        final id = await ref.read(medicineRepoProvider).insert(baseMed);
-        final saved = baseMed.copyWith(id: id);
-        await _scheduleNativeAlarms(saved);
+        final id = await ref.read(medicineRepoProvider).insert(med);
+        await _scheduleNativeAlarmsForFlow(flow, id);
       }
 
       ref.invalidate(medicinesProvider);
@@ -246,7 +357,6 @@ class _Step7SummaryScreenState extends ConsumerState<Step7SummaryScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(flow.editingId != null ? 'Updated & rescheduled' : 'Saved & scheduled')),
         );
-        // go to meds list
         context.go('/meds');
       }
     } catch (e) {
@@ -255,38 +365,6 @@ class _Step7SummaryScreenState extends ConsumerState<Step7SummaryScreen> {
       }
     } finally {
       if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  Future<void> _scheduleNativeAlarms(Medicine saved) async {
-    final loc = TimezoneService.locationFromName(saved.timezone);
-    final times = (jsonDecode(saved.timesJson) as List).cast<String>();
-    final start = DateTime.fromMillisecondsSinceEpoch(saved.startDateMillis);
-
-    int idx = 0;
-    for (int day = 0; day < saved.days; day++) {
-      final date = DateTime(start.year, start.month, start.day).add(Duration(days: day));
-
-      for (final t in times) {
-        final parts = t.split(':');
-        final hour = int.parse(parts[0]);
-        final minute = int.parse(parts[1]);
-
-        final tzDate = tz.TZDateTime(loc, date.year, date.month, date.day, hour, minute);
-        if (tzDate.isBefore(tz.TZDateTime.now(loc))) continue;
-
-        const slotSize = 10000;
-        final alarmId = saved.id! * slotSize + idx;
-
-        await NativeAlarmService.schedule(
-          id: alarmId,
-          triggerAt: tzDate.toLocal(),
-          title: "Time for ${saved.name}",
-          body: (saved.note?.isNotEmpty == true) ? saved.note! : "Take your medicine",
-        );
-
-        idx++;
-      }
     }
   }
 }

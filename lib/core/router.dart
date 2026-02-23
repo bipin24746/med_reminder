@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:med_reminder_fixed/features/alarm/alarm_ring_screen.dart';
 
 import '../providers/providers.dart';
 import '../features/auth/signin_screen.dart';
@@ -101,10 +102,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/meds/add/times',
             builder: (_, __) => const Step4TimesScreen(),
           ),
-          GoRoute(
-            path: '/meds/add/review',
-            builder: (_, __) => const Step5ReviewTimesScreen(),
-          ),
+          // GoRoute(
+          //   path: '/meds/add/review',
+          //   builder: (_, __) => const Step5ReviewTimesScreen(),
+          // ),
           GoRoute(
             path: '/meds/add/dose',
             builder: (_, __) => const Step6DoseScreen(),
@@ -113,6 +114,25 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/meds/add/summary',
             builder: (_, __) => const Step7SummaryScreen(),
           ),
+          // GoRoute(
+          //   path: '/meds/add/review',
+          //   builder: (_, __) => const Step5ReviewTimesScreen(),
+          // ),
+
+          // GoRoute(
+          //   path: '/alarm',
+          //   builder: (context, state) {
+          //     final alarmId = (state.extra as Map?)?['alarmId'] as int? ?? 0;
+          //     final title = (state.extra as Map?)?['title'] as String? ?? 'Medicine Reminder';
+          //     final body = (state.extra as Map?)?['body'] as String? ?? 'Take your medicine';
+          //
+          //     return AlarmRingScreen(
+          //       alarmId: alarmId,
+          //       title: title,
+          //       body: body,
+          //     );
+          //   },
+          // ),
         ],
       ),
     ],

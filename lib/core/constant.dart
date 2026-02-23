@@ -1,4 +1,6 @@
 class AppConstants {
   static const appName = 'Med Reminder';
-  static const primaryBlue = 0xFF1565C0; // nice blue shade
+
+  // 🌿 Medicinal Green (primary)
+  static const primaryGreen = 0xFF2E7D32; // medical green (calm + professional)
 }

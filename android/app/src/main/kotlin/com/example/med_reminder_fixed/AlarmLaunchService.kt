@@ -18,6 +18,11 @@ class AlarmLaunchService : Service() {
         val title = intent?.getStringExtra("title") ?: "Medicine Reminder"
         val body = intent?.getStringExtra("body") ?: "Time to take your medicine"
 
+        val openSkipDialog = intent?.getBooleanExtra("openSkipDialog", false) == true
+        val scheduledAt = intent?.getLongExtra("scheduledAt", 0L) ?: 0L
+        val streamId = intent?.getIntExtra("streamId", id) ?: id
+        val snoozeSec = intent?.getLongExtra("snoozeSec", 0L) ?: 0L
+
         // Minimal foreground notif (low importance) just to allow launch
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "alarm_fg_channel_v1"
@@ -49,12 +54,15 @@ class AlarmLaunchService : Service() {
             val i = Intent(this, AlarmActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 putExtra("id", id)
+                putExtra("streamId", streamId)
+                putExtra("scheduledAt", scheduledAt)
+                putExtra("snoozeSec", snoozeSec)
                 putExtra("title", title)
                 putExtra("body", body)
+                putExtra("openSkipDialog", openSkipDialog)
             }
             startActivity(i)
-        } catch (_: Throwable) {
-        }
+        } catch (_: Throwable) {}
 
         stopForeground(true)
         stopSelf()
