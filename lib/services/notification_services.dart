@@ -15,7 +15,7 @@ class NotificationService {
   static const String _channelId = 'med_alarm_channel';
   static const String _channelName = 'Medicine Alarms';
 
-  // ✅ FIXED: must match MainActivity channel: "alarm_native"
+  // ✅ must match MainActivity channel: "alarm_native"
   static const MethodChannel _alarmChannel = MethodChannel('alarm_native');
 
   static Future<void> init() async {
@@ -32,7 +32,7 @@ class NotificationService {
         String body = 'Time to take your medicine';
 
         if (payload.startsWith('alarm:')) {
-          final data = payload.substring(6);
+          final data = payload.substring(6); // ✅ "alarm:" = 6 chars
           final parts = data.split('|');
           title = parts.isNotEmpty ? parts[0] : title;
           body = parts.length > 1 ? parts[1] : body;
@@ -45,7 +45,8 @@ class NotificationService {
           return;
         }
 
-        // ✅ SKIP_5: open native alarm activity (works even if app closed)
+        // ✅ SNOOZE button from notification bar (keep if you want)
+        // If you want "no extra text/button" in notification bar, remove this action
         if (action == 'SKIP_5') {
           try {
             await _alarmChannel.invokeMethod('openAlarmActivity', {
@@ -58,7 +59,7 @@ class NotificationService {
           return;
         }
 
-        // Normal tap
+        // Normal tap -> open AlarmActivity
         if (payload.startsWith('alarm:')) {
           try {
             await _alarmChannel.invokeMethod('openAlarmActivity', {
@@ -100,6 +101,7 @@ class NotificationService {
     }
   }
 
+  /// ✅ REQUIRED by your alarmscheduler.dart
   static Future<void> showImmediateAlarm({
     required int id,
     required String title,
@@ -119,10 +121,12 @@ class NotificationService {
         visibility: NotificationVisibility.public,
         fullScreenIntent: true,
         audioAttributesUsage: AudioAttributesUsage.alarm,
+
+        // ✅ Keep ONLY Snooze + Taken in notification bar
         actions: <AndroidNotificationAction>[
           const AndroidNotificationAction(
             'SKIP_5',
-            'Skip for 5 minutes',
+            'Snooze',
             showsUserInterface: true,
           ),
           const AndroidNotificationAction(
@@ -144,16 +148,28 @@ class NotificationService {
     );
   }
 
-  static Future<void> cancelForMedicine(int medicineId) async {
-    const maxPerMed = 80;
-    final futures = <Future<void>>[];
+  /// ✅ v20+ requires named parameter
+  static Future<void> cancelId(int id) async {
+    await _plugin.cancel(id: id);
+  }
 
-    for (int i = 0; i < maxPerMed; i++) {
-      futures.add(_plugin.cancel(id: medicineId * 1000 + i));
+  /// ✅ deterministic cancel safe range
+  static Future<void> cancelForMedicine(int medicineId) async {
+    const maxDays = 30;
+    const maxTimesPerDay = 12;
+
+    final futures = <Future<void>>[];
+    for (int day = 0; day < maxDays; day++) {
+      for (int ti = 0; ti < maxTimesPerDay; ti++) {
+        final id = medicineId * 1000 + (day * maxTimesPerDay + ti);
+        futures.add(_plugin.cancel(id: id));
+      }
     }
     await Future.wait(futures);
   }
 
+  /// ✅ stable schedule IDs:
+  /// id = medId*1000 + (dayIndex * times.length + timeIndex)
   static Future<void> scheduleMedicine(Medicine med) async {
     if (med.id == null) {
       throw Exception('Medicine id is null. Insert into DB first.');
@@ -166,13 +182,13 @@ class NotificationService {
     await cancelForMedicine(med.id!);
 
     final maxDaysForDemo = med.days.clamp(1, 30);
-    int notifIndex = 0;
 
     for (int day = 0; day < maxDaysForDemo; day++) {
-      final date = DateTime(start.year, start.month, start.day)
-          .add(Duration(days: day));
+      final date =
+      DateTime(start.year, start.month, start.day).add(Duration(days: day));
 
-      for (final t in times) {
+      for (int timeIndex = 0; timeIndex < times.length; timeIndex++) {
+        final t = times[timeIndex];
         final parts = t.split(':');
         final hour = int.parse(parts[0]);
         final minute = int.parse(parts[1]);
@@ -182,7 +198,8 @@ class NotificationService {
 
         if (scheduledLocal.isBefore(tz.TZDateTime.now(loc))) continue;
 
-        final id = med.id! * 1000 + notifIndex;
+        final stableIndex = day * times.length + timeIndex;
+        final id = med.id! * 1000 + stableIndex;
 
         final details = NotificationDetails(
           android: AndroidNotificationDetails(
@@ -212,13 +229,7 @@ class NotificationService {
           'alarm:Time for ${med.name}|${(med.note?.isNotEmpty == true) ? med.note! : 'Take your medicine'}',
           matchDateTimeComponents: null,
         );
-
-        notifIndex++;
       }
-    }
-
-    if (notifIndex == 0) {
-      throw Exception('No future reminders. Choose a time 2–3 minutes ahead.');
     }
   }
 }

@@ -25,7 +25,6 @@ class MainActivity : FlutterActivity() {
                         val triggerAtMillis = call.argument<Long>("triggerAtMillis") ?: 0L
                         val title = call.argument<String>("title") ?: "Medicine Reminder"
                         val body = call.argument<String>("body") ?: "Take your medicine"
-
                         val extras = call.argument<HashMap<String, Any>>("extras") ?: hashMapOf()
 
                         scheduleExact(
@@ -43,6 +42,29 @@ class MainActivity : FlutterActivity() {
                     "cancel" -> {
                         val id = call.argument<Int>("id") ?: 0
                         cancelAlarm(this, id)
+                        result.success(null)
+                    }
+
+                    "openAlarmActivity" -> {
+                        val title = call.argument<String>("title") ?: "Medicine Reminder"
+                        val body = call.argument<String>("body") ?: "Take your medicine"
+
+                        val i = Intent(this, AlarmActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                            putExtra("title", title)
+                            putExtra("body", body)
+                        }
+                        startActivity(i)
+                        result.success(null)
+                    }
+
+                    // ✅ called from HomeScreen card buttons
+                    "markDoseHandled" -> {
+                        val id = call.argument<Int>("id") ?: 0
+                        if (id != 0) {
+                            DoseHandledStore.markHandled(this, id)
+                            cancelAlarm(this, id) // ✅ ensure it does not fire
+                        }
                         result.success(null)
                     }
 
@@ -65,9 +87,6 @@ class MainActivity : FlutterActivity() {
             putExtra("id", id)
             putExtra("title", title)
             putExtra("body", body)
-
-            // ✅ occurrence time used by "Skip now"
-            putExtra("scheduledAt", triggerAtMillis)
 
             for ((k, v) in extras) {
                 when (v) {
@@ -96,7 +115,9 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun cancelAlarm(context: Context, id: Int) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, AlarmReceiver::class.java)
+
         val pi = PendingIntent.getBroadcast(
             context,
             id,
@@ -105,7 +126,7 @@ class MainActivity : FlutterActivity() {
                     (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         )
 
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         alarmManager.cancel(pi)
+        pi.cancel()
     }
 }

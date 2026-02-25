@@ -279,11 +279,13 @@ class _AddMedicineScreenState extends ConsumerState<AddMedicineScreen> {
     final times = (jsonDecode(saved.timesJson) as List).cast<String>();
     final start = DateTime.fromMillisecondsSinceEpoch(saved.startDateMillis);
 
-    int idx = 0;
+    const slotSize = 10000;
+
     for (int day = 0; day < saved.days; day++) {
       final date = DateTime(start.year, start.month, start.day).add(Duration(days: day));
 
-      for (final t in times) {
+      for (int timeIndex = 0; timeIndex < times.length; timeIndex++) {
+        final t = times[timeIndex];
         final parts = t.split(':');
         final hour = int.parse(parts[0]);
         final minute = int.parse(parts[1]);
@@ -291,18 +293,19 @@ class _AddMedicineScreenState extends ConsumerState<AddMedicineScreen> {
         final tzDate = tz.TZDateTime(loc, date.year, date.month, date.day, hour, minute);
         if (tzDate.isBefore(tz.TZDateTime.now(loc))) continue;
 
-        const slotSize = 10000; // enough for 365*6 = 2190 alarms
-        final alarmId = saved.id! * slotSize + idx;
-
+        // ✅ deterministic id (MATCHES HomeScreen)
+        final stableIndex = day * times.length + timeIndex;
+        final alarmId = saved.id! * slotSize + stableIndex;
 
         await NativeAlarmService.schedule(
           id: alarmId,
           triggerAt: tzDate.toLocal(),
           title: "Time for ${saved.name}",
           body: saved.note?.isNotEmpty == true ? saved.note! : "Take your medicine",
+          extras: {
+            'scheduledAt': tzDate.millisecondsSinceEpoch, // helpful for native logs
+          },
         );
-
-        idx++;
       }
     }
   }

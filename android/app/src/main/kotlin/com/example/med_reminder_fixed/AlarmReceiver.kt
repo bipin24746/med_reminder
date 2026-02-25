@@ -23,23 +23,25 @@ class AlarmReceiver : BroadcastReceiver() {
             intent.getIntExtra("id", (System.currentTimeMillis() % Int.MAX_VALUE).toInt())
         )
 
-        // notifId can differ for snooze
+        // ✅ notifId can differ for snooze, but default to streamId if missing
         val notifId = intent.getIntExtra("id", streamId)
+
         val isSnooze = intent.getBooleanExtra("isSnooze", false)
 
-        // ✅ occurrence time
-        val scheduledAt = intent.getLongExtra("scheduledAt", 0L)
-
-        // ✅ Skip ONLY this occurrence
-        if (!isSnooze && SkipStore.isSkipped(context, streamId, scheduledAt)) {
-            scheduleNext(context, intent, streamId)
+        // ✅ If user already did Taken/Skip for THIS exact alarm instance from app UI, do NOT ring
+        if (notifId != 0 && DoseHandledStore.isHandled(context, notifId)) {
+            // keep normal schedule going (future doses still ring)
+            if (!isSnooze) {
+                scheduleNext(context, intent, streamId)
+            }
             return
         }
 
-        // ✅ Read snooze seconds from Settings
-        val sp = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-        val snoozeSec = sp.getLong("flutter.alarm_snooze_sec", 300L).coerceIn(60L, 24 * 60 * 60L)
-        val snoozeMin = (snoozeSec / 60).toInt().coerceAtLeast(1)
+        // ✅ Skip logic only for real stream alarms (not snooze)
+        if (!isSnooze && SkipStore.shouldSkipNow(context, streamId)) {
+            scheduleNext(context, intent, streamId)
+            return
+        }
 
         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
 
@@ -58,8 +60,6 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("streamId", streamId)
                 putExtra("title", title)
                 putExtra("body", body)
-                putExtra("scheduledAt", scheduledAt)
-                putExtra("snoozeSec", snoozeSec)
             }
 
             val fullScreenPI = PendingIntent.getActivity(
@@ -67,7 +67,8 @@ class AlarmReceiver : BroadcastReceiver() {
                 notifId,
                 activityIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or
-                        (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+                        (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                            PendingIntent.FLAG_IMMUTABLE else 0)
             )
 
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -92,22 +93,21 @@ class AlarmReceiver : BroadcastReceiver() {
                 nm.createNotificationChannel(ch)
             }
 
-            // ✅ TAKEN
+            // ✅ STOP (Taken)
             val stopIntent = Intent(context, AlarmActionReceiver::class.java).apply {
                 putExtra("action", "STOP")
                 putExtra("id", notifId)
                 putExtra("streamId", streamId)
                 putExtra("title", title)
                 putExtra("body", body)
-                putExtra("scheduledAt", scheduledAt)
-                putExtra("snoozeSec", snoozeSec)
             }
             val stopPI = PendingIntent.getBroadcast(
                 context,
                 notifId + 100000,
                 stopIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or
-                        (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+                        (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                            PendingIntent.FLAG_IMMUTABLE else 0)
             )
 
             // ✅ SNOOZE
@@ -117,33 +117,14 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("streamId", streamId)
                 putExtra("title", title)
                 putExtra("body", body)
-                putExtra("scheduledAt", scheduledAt)
-                putExtra("snoozeSec", snoozeSec)
             }
             val snoozePI = PendingIntent.getBroadcast(
                 context,
                 notifId + 200000,
                 snoozeIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or
-                        (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
-            )
-
-            // ✅ SKIP NOW (popup reason)
-            val skipNowIntent = Intent(context, AlarmActionReceiver::class.java).apply {
-                putExtra("action", "SKIP_NOW")
-                putExtra("id", notifId)
-                putExtra("streamId", streamId)
-                putExtra("title", title)
-                putExtra("body", body)
-                putExtra("scheduledAt", scheduledAt)
-                putExtra("snoozeSec", snoozeSec)
-            }
-            val skipNowPI = PendingIntent.getBroadcast(
-                context,
-                notifId + 300000,
-                skipNowIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or
-                        (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+                        (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                            PendingIntent.FLAG_IMMUTABLE else 0)
             )
 
             val builder = NotificationCompat.Builder(context, channelId)
@@ -156,8 +137,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 .setOngoing(true)
                 .setAutoCancel(false)
                 .setFullScreenIntent(fullScreenPI, true)
-                .addAction(0, "Snooze $snoozeMin min", snoozePI)
-                .addAction(0, "Skip now", skipNowPI)
+                .addAction(0, "Snooze", snoozePI)
                 .addAction(0, "Taken", stopPI)
 
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
@@ -169,7 +149,7 @@ class AlarmReceiver : BroadcastReceiver() {
             // try launch activity
             try { context.startActivity(activityIntent) } catch (_: Throwable) {}
 
-            // schedule next (only for stream alarms, not snooze)
+            // ✅ schedule next for stream only (not snooze)
             if (!isSnooze) {
                 scheduleNext(context, intent, streamId)
             }
@@ -180,6 +160,7 @@ class AlarmReceiver : BroadcastReceiver() {
         }
     }
 
+    // ✅ keep your existing scheduleNext function (unchanged)
     private fun scheduleNext(context: Context, intent: Intent, streamId: Int) {
         val title = intent.getStringExtra("title") ?: "Medicine Reminder"
         val body = intent.getStringExtra("body") ?: "Take your medicine"
@@ -192,6 +173,12 @@ class AlarmReceiver : BroadcastReceiver() {
         val monthlyDay = intent.getIntExtra("monthlyDay", 1)
 
         val now = Calendar.getInstance()
+
+        // clear expired skip
+        val skipUntil = SkipStore.getSkipUntil(context, streamId)
+        if (skipUntil > 0L && System.currentTimeMillis() >= skipUntil) {
+            SkipStore.clearSkip(context, streamId)
+        }
 
         fun nextDaily(): Long {
             val cal = Calendar.getInstance().apply {
@@ -269,12 +256,16 @@ class AlarmReceiver : BroadcastReceiver() {
             return build(1)
         }
 
-        val nextAt = when (freqType) {
+        val nextAtRaw = when (freqType) {
             1 -> nextInterval()
             2 -> nextWeekly()
             3 -> nextMonthly()
             else -> nextDaily()
         }
+
+        // apply skip window
+        val skipUntil2 = SkipStore.getSkipUntil(context, streamId)
+        val nextAt = if (skipUntil2 > 0L && nextAtRaw < skipUntil2) skipUntil2 else nextAtRaw
 
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
@@ -285,7 +276,6 @@ class AlarmReceiver : BroadcastReceiver() {
             putExtra("title", title)
             putExtra("body", body)
             putExtra("isSnooze", false)
-            putExtra("scheduledAt", nextAt) // ✅ next occurrence time
         }
 
         val pi = PendingIntent.getBroadcast(
@@ -293,7 +283,8 @@ class AlarmReceiver : BroadcastReceiver() {
             streamId,
             nextIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or
-                    (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+                    (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                        PendingIntent.FLAG_IMMUTABLE else 0)
         )
 
         val showIntent = Intent(context, MainActivity::class.java).apply {
@@ -305,7 +296,8 @@ class AlarmReceiver : BroadcastReceiver() {
             streamId + 500000,
             showIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or
-                    (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+                    (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                        PendingIntent.FLAG_IMMUTABLE else 0)
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {

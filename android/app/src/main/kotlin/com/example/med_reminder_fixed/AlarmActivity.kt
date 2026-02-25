@@ -61,7 +61,7 @@ class AlarmActivity : Activity() {
         val title = intent.getStringExtra("title") ?: "Medicine Reminder"
         val body = intent.getStringExtra("body") ?: "Time to take your medicine"
 
-        // cancel notif to stop sound
+        // cancel notification (stop its sound if any)
         try {
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (alarmId != 0) nm.cancel(alarmId)
@@ -74,7 +74,7 @@ class AlarmActivity : Activity() {
 
         val durationSec = sp.getLong("flutter.alarm_duration_sec", 300L).toInt().coerceIn(5, 60 * 60)
 
-        // ✅ Selected snooze seconds from settings
+        // ✅ snooze seconds coming from Flutter (default 5 min)
         val snoozeSec = sp.getLong("flutter.alarm_snooze_sec", 300L).toInt().coerceIn(60, 24 * 60 * 60)
         val snoozeMin = (snoozeSec / 60).coerceAtLeast(1)
 
@@ -83,6 +83,7 @@ class AlarmActivity : Activity() {
 
         Log.d("AlarmActivity", "alarmId=$alarmId streamId=$streamId scheduledAt=$scheduledAt duration=$durationSec snoozeSec=$snoozeSec")
 
+        // mark active
         sp.edit().putBoolean(activeKey(alarmId), true).apply()
 
         startLoopingSound(soundMode, pickedUri)
@@ -95,9 +96,10 @@ class AlarmActivity : Activity() {
         btnSnooze.text = "Snooze $snoozeMin minutes"
         btnSkipNow.text = "Skip for now"
 
-        // Auto stop after duration → schedule repeat with snoozeSec
+        // AUTO timeout -> snooze repeat
         handler.postDelayed({
             stopSound()
+            UserActionLog.add(this, "AUTO_TIMEOUT", streamId, alarmId, scheduledAt, title, body)
             scheduleSnoozeRepeat(alarmId, title, body, snoozeSec)
             finish()
         }, durationSec * 1000L)
@@ -105,31 +107,57 @@ class AlarmActivity : Activity() {
         // TAKEN
         btnTaken.setOnClickListener {
             stopSound()
+
+            // logs
+            UserActionLog.add(this, "TAKEN", streamId, alarmId, scheduledAt, title, body)
+            ActionLogStore.addTaken(this, streamId, title, body, scheduledAt)
+
             sp.edit().putBoolean(activeKey(alarmId), false).apply()
             cancelRepeats(alarmId)
             finish()
         }
 
-        // SNOOZE (selected minutes)
+        // SNOOZE
         btnSnooze.setOnClickListener {
             stopSound()
+            UserActionLog.add(this, "SNOOZE", streamId, alarmId, scheduledAt, title, body, "sec=$snoozeSec")
             scheduleSnoozeRepeat(alarmId, title, body, snoozeSec)
             finish()
         }
 
-        // SKIP NOW (only this occurrence)
+        // SKIP NOW (popup reasons)
         btnSkipNow.setOnClickListener {
             stopSound()
-            showSkipReasonDialog(streamId, scheduledAt)
+            showSkipReasonDialog(
+                streamId = streamId,
+                scheduledAt = scheduledAt,
+                notifId = alarmId,
+                title = title,
+                body = body
+            )
         }
 
         if (openSkipDialog) {
             stopSound()
-            handler.post { showSkipReasonDialog(streamId, scheduledAt) }
+            handler.post {
+                showSkipReasonDialog(
+                    streamId = streamId,
+                    scheduledAt = scheduledAt,
+                    notifId = alarmId,
+                    title = title,
+                    body = body
+                )
+            }
         }
     }
 
-    private fun showSkipReasonDialog(streamId: Int, scheduledAt: Long) {
+    private fun showSkipReasonDialog(
+        streamId: Int,
+        scheduledAt: Long,
+        notifId: Int,
+        title: String,
+        body: String
+    ) {
         val reasons = arrayOf(
             "Already took it",
             "Not feeling well",
@@ -142,7 +170,34 @@ class AlarmActivity : Activity() {
             .setTitle("Why are you skipping this dose?")
             .setItems(reasons) { _, which ->
                 val reason = reasons[which]
-                SkipStore.markSkipped(this, streamId, scheduledAt, reason)
+
+                // ✅ set skip window ONLY if your receiver uses it (optional)
+                // If you want skip ONLY for this one dose time, keep SkipStore usage out,
+                // and rely just on scheduleNext logic. For now, we just log.
+                // (So no SkipStore.setSkipUntil here.)
+
+                // ✅ store simplified logs for your Logs screen
+                ActionLogStore.addSkipped(
+                    context = this,
+                    streamId = streamId,
+                    title = title,
+                    body = body,
+                    reason = reason,
+                    scheduledAt = scheduledAt
+                )
+
+                // ✅ your existing logger (detailed)
+                UserActionLog.add(
+                    context = this,
+                    action = "SKIP_NOW",
+                    streamId = streamId,
+                    notifId = notifId,
+                    scheduledAt = scheduledAt,
+                    title = title,
+                    body = body,
+                    reason = reason
+                )
+
                 finish()
             }
             .setNegativeButton("Cancel") { dialog, _ -> dialog.dismiss() }
@@ -160,7 +215,6 @@ class AlarmActivity : Activity() {
 
     private fun startLoopingSound(mode: String, pickedUri: String?) {
         val uri = resolveAlarmUri(mode, pickedUri)
-
         try {
             stopSound()
             val mp = MediaPlayer()
@@ -193,6 +247,7 @@ class AlarmActivity : Activity() {
             putExtra("title", title)
             putExtra("body", body)
             putExtra("id", id)
+            putExtra("streamId", alarmId)
             putExtra("scheduledAt", triggerAt)
             putExtra("isSnooze", true)
         }

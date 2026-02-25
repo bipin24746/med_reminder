@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:med_reminder_fixed/features/alarm/alarm_ring_screen.dart';
+import 'package:med_reminder_fixed/features/logs/action_log_screen.dart';
 
 import '../providers/providers.dart';
 import '../features/auth/signin_screen.dart';
@@ -113,6 +114,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/meds/add/summary',
             builder: (_, __) => const Step7SummaryScreen(),
+          ),
+          GoRoute(
+            path: '/logs',
+            builder: (_, __) => const ActionLogScreen(),
           ),
           // GoRoute(
           //   path: '/meds/add/review',

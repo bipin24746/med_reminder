@@ -3,10 +3,6 @@ import 'package:flutter/services.dart';
 class NativeAlarmService {
   static const MethodChannel _ch = MethodChannel('alarm_native');
 
-  static const int _slotSize = 10000;
-  static const int _maxSlots = 50;
-  // 50 is more than enough (12 max times/day)
-
   static Future<void> schedule({
     required int id,
     required DateTime triggerAt,
@@ -23,18 +19,20 @@ class NativeAlarmService {
         'extras': extras ?? {},
       });
     } catch (e) {
-      print('Alarm schedule failed: $e');
+      // ignore
     }
   }
 
-  static Future<void> cancel(int id) async {
+  /// ✅ IMPORTANT: cancels Android AlarmManager PendingIntent (native)
+  static Future<void> cancel({required int id}) async {
     try {
       await _ch.invokeMethod('cancel', {'id': id});
     } catch (e) {
-      print('Alarm cancel failed: $e');
+      // ignore
     }
   }
 
+  /// ✅ Opens AlarmActivity immediately (testing button)
   static Future<void> openNow({
     required String title,
     required String body,
@@ -45,15 +43,19 @@ class NativeAlarmService {
         'body': body,
       });
     } catch (e) {
-      print('Open alarm activity failed: $e');
+      // ignore
     }
   }
 
   /// ✅ Cancels ALL alarms related to a medicine safely
+  /// (same behavior you had before)
   static Future<void> cancelForMedicine(int medicineId) async {
-    for (int idx = 0; idx < _maxSlots; idx++) {
-      final id = medicineId * _slotSize + idx;
-      await cancel(id);
+    const slotSize = 10000;
+    const maxSlots = 50; // adjust if you need more
+
+    for (int idx = 0; idx < maxSlots; idx++) {
+      final id = medicineId * slotSize + idx;
+      await cancel(id: id);
     }
   }
 }
